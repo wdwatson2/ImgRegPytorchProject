@@ -6,8 +6,9 @@ import json
 import re
 
 def getRandomAffine(scale_range=(0.95,1.3), rotation_range=(-60,60),
-                    translation_range=(-0.15,0.15)):
- 
+                    translation_range=(-0.15,0.15), seed = 42):
+    np.random.seed(seed)
+    
     sx, sy = np.random.uniform(scale_range[0], scale_range[1], 2)
 
     angle = np.random.uniform(rotation_range[0], rotation_range[1])
