@@ -2,7 +2,6 @@
 import torch
 from PIL import Image
 import matplotlib.pyplot as plt
-from matplotlib.ticker import ScalarFormatter
 from src.domain import Domain
 from src.utils import *
 import torch.func as func
