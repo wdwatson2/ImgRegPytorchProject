@@ -1,0 +1,1 @@
+# Location to store generated figures from paper

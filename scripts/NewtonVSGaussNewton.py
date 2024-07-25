@@ -50,7 +50,7 @@ def lossfn(wc):
     return distance(Ty,R0)
 
 # Stopping criteria
-gtol = 1e-2
+gtol = 1e-4
 
 if __name__ == '__main__':
 
@@ -122,7 +122,7 @@ if __name__ == '__main__':
     plt.title('Gradient Norm Plot', fontsize=16)
     plt.legend()
     plt.tight_layout()
-    plt.savefig('./results/fig/gradient_plot.png')
+    plt.savefig('./results/figs/gradient_plot.png')
     plt.show()
 
     # Creation of N vs GN plot in paper
@@ -155,56 +155,8 @@ if __name__ == '__main__':
     plt.colorbar()
     plt.subplots_adjust(hspace=0.5)  # Adjust vertical spacing
     plt.tight_layout()
-    plt.savefig('./results/fig/results_single_scale.png')
+    plt.savefig('./results/figs/results_single_scale.png')
     plt.show()
-
-    # Computing search directions with Automatic Differentation
-    # Timing both Gauss Newton and Pure Newton 
-    # Gauss Newton direction is slightly quicker to get on average
-    trials = 1000
-    gn_times = []
-    for _ in range(trials):
-        start = time.time()
-
-        wc = torch.tensor([1., 0., 0., 1., 0., 0.]) + torch.randn(6)* 1e-2
-        Jac_fwd, Tyc = func.jacfwd(Ty, has_aux=True)(wc, xc)
-        Jac_fwd = Jac_fwd.squeeze(1).detach()
-        res_fwd = Tyc-R0
-        s = torch.linalg.lstsq(Jac_fwd, res_fwd).solution.squeeze(1)
-
-        end = time.time()
-
-        gn_times.append(end-start)
-
-    n_times = []
-    for _ in range(trials):
-        start = time.time()
-
-        wc = torch.tensor([1., 0., 0., 1., 0., 0.]) + torch.randn(6)* 1e-2
-        grad = torch.func.grad(lossfn)(wc).detach()
-        hessian = torch.func.jacrev(torch.func.grad(lossfn))(wc).detach()
-        hessian = .5 * (hessian + hessian.T)
-        s = torch.linalg.solve(hessian, grad)
-
-        end = time.time()
-
-        n_times.append(end-start)
-
-    from statistics import mean, stdev
-    import pandas as pd
-
-    print(f"GN Direction Time: {mean(gn_times)} with std: {stdev(gn_times)}")
-    print(f"N Direction Time: {mean(n_times)} with std: {stdev(n_times)}")
-
-    data = {}
-
-    data['GN'] = gn_times
-    data['N'] = n_times
-
-    df = pd.DataFrame(data)
-
-    csv_filename = './results/data/NvsGNSearchDirectiontimes.csv'
-    df.to_csv(csv_filename)
 
 
 

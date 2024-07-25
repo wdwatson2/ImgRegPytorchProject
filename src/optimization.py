@@ -65,7 +65,7 @@ def lsq_lma(
     if verbose:
         print("Loss: {:.4e}".format(torch.norm(f).item()), "Grad: {:.4e}".format(torch.norm(g).item()))
     if return_loss_and_grad:
-        losses.append(torch.norm(f).item())
+        losses.append((torch.norm(f)**2).item())
         grads.append(torch.norm(g).item())
     H = torch.matmul(j.T, j)
     u = tau * torch.max(torch.diag(H))
@@ -90,7 +90,7 @@ def lsq_lma(
         if verbose:
             print("Loss: {:.4e}".format(torch.norm(f).item()), "Grad: {:.4e}".format(torch.norm(g).item()))
         if return_loss_and_grad:
-            losses.append(torch.norm(f).item())
+            losses.append((torch.norm(f)**2).item())
             grads.append(torch.norm(g).item())
         if meth == 'lev':
             u, v = (u*torch.max(torch.tensor([1/3, 1-(2*rho-1)**3])), 2) if rho > 0 else (u*v, v*2)
