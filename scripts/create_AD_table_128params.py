@@ -3,22 +3,20 @@ import timeit
 import matplotlib.pyplot as plt
 import statistics
 import pandas as pd
+from src.transformations import VelocityNN, NeuralODE
 
 SETUP_CODE = '''
 # load hands-R.jpg and convert to pytorch tensor
 import torch
 from PIL import Image
 import matplotlib.pyplot as plt
-from domain import Domain
+from src.domain import Domain
 
-from utils import flatten_params, unflatten_params, vec_to_params, params_to_vec
+from src.utils import flatten_params, unflatten_params, vec_to_params, params_to_vec, count_params
 import numpy as np
 import torch.func as func
-from transformations import VelocityNN, NeuralODE
-from transformations import Rigid2d, Affine2d, TransformationSequence
-from transformations import VelocityNN, NeuralODE, NeuralLengthRegularize
-from scipy.optimize import minimize
-import torchdiffeq
+from src.transformations import VelocityNN, NeuralODE
+
 torch.set_default_dtype(torch.float64)
 
 R = Image.open('data/hands-R.jpg')
@@ -33,12 +31,14 @@ T = torch.fliplr(torch.flipud(torch.tensor(T.getdata(), dtype=torch.float32).vie
 domain = Domain(torch.tensor([0.0, 20.0 ,0.0, 25.0]), torch.tensor([m, m]))
 theta = torch.tensor(1e-3) 
 
-from distance import SSDDistance
+from src.distance import SSDDistance
 distance = SSDDistance(domain)
 
-from interpolation import SplineInter
+from src.interpolation import SplineInter
 
-trafo = Affine2d()
+vel = VelocityNN(domain.dim,[domain.dim+1, 8]) 
+trafo = NeuralODE(vel)
+num_params = count_params(trafo)
 
 keys = [k for k, _ in trafo.named_parameters()]
 _, shapes, sizes = flatten_params({k: v.detach() for k, v in trafo.named_parameters()})
@@ -59,12 +59,12 @@ def lossfn(wc, theta):
     return loss
 '''
 
-repeat = 1000
+repeat = 2000
 number = 1
 
 def loss_timing():
     TEST_CODE = '''
-wc = torch.randn(6)
+wc = torch.randn(num_params)
 lossfn(wc, theta)'''
     
     times_loss = timeit.repeat(setup=SETUP_CODE,
@@ -76,7 +76,7 @@ lossfn(wc, theta)'''
 
 def grad_timing():
     TEST_CODE = '''
-wc = torch.randn(6)
+wc = torch.randn(num_params)
 func.grad(lossfn, argnums=0)(wc, theta)'''
     
     times_grad = timeit.repeat(setup=SETUP_CODE,
@@ -86,9 +86,14 @@ func.grad(lossfn, argnums=0)(wc, theta)'''
     return times_grad
     
 def hess_timing():
+    '''
+    using func.jacrev(func.grad) is quicker than func.hessian for this problem
+    '''
+
     TEST_CODE = '''
-wc = torch.randn(6)
-func.jacrev(func.grad(lossfn))(wc, theta)'''
+wc = torch.randn(num_params)
+func.jacrev(func.grad(lossfn))(wc, theta)
+'''
     
     times_hessian = timeit.repeat(setup=SETUP_CODE,
                             stmt=TEST_CODE,
@@ -98,7 +103,7 @@ func.jacrev(func.grad(lossfn))(wc, theta)'''
 
 def jacfwd_timing():
     TEST_CODE = '''
-wc = torch.randn(6)
+wc = torch.randn(num_params)
 torch.func.jacfwd(forward, argnums=0)(wc, theta)'''
     
     times_jacfwd = timeit.repeat(setup=SETUP_CODE,
@@ -109,7 +114,7 @@ torch.func.jacfwd(forward, argnums=0)(wc, theta)'''
 
 def jacrev_timing():
     TEST_CODE = '''
-wc = torch.randn(6)
+wc = torch.randn(num_params)
 torch.func.jacrev(forward, argnums=0)(wc, theta)'''
     
     times_jacrev = timeit.repeat(setup=SETUP_CODE,
@@ -120,7 +125,7 @@ torch.func.jacrev(forward, argnums=0)(wc, theta)'''
 
 def forward_timing():
     TEST_CODE = '''
-wc = torch.randn(6)
+wc = torch.randn(num_params)
 forward(wc, theta)'''
     
     times_forward = timeit.repeat(setup=SETUP_CODE,
@@ -148,8 +153,8 @@ if __name__ == '__main__':
     print("fwd done")
     times_jacfwd = jacfwd_timing()
     print("jacfwd done")
-    # times_jacrev = jacrev_timing()
-    # print("jacrev done")
+    times_jacrev = jacrev_timing()
+    print("jacrev done")
 
     data = {}
 
@@ -159,6 +164,7 @@ if __name__ == '__main__':
     data['hessian'] = compute_stats(times_hessian)
     data['forward'] = compute_stats(times_forward)
     data['jacfwd'] = compute_stats(times_jacfwd)
+    data['jacrev'] = compute_stats(times_jacrev)
 
     # Creating a DataFrame
     df = pd.DataFrame(data, index=['mean', 'std']).transpose()
