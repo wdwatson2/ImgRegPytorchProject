@@ -14,6 +14,7 @@ from src.distance import SSDDistance
 import time
 import pandas as pd
 from src.plotting import view_image_2d, plot_grid_2d
+from src.optimization import lsq_lma
 torch.set_default_dtype(torch.float64)
 
 R = Image.open('./data/hands-R.jpg')
@@ -35,6 +36,20 @@ xc = domain.getCellCenteredGrid().view(-1,2)
 
 last_loss = None
 last_grad = None
+
+def res(wc,theta):
+    wp = unflatten_params(wc,keys,shapes,sizes)
+    Timg = SplineInter(T, domain,regularizer='moments',theta=theta)
+    yc = func.functional_call(trafo,wp,xc)
+    Ty = Timg(yc)
+    Rimg = SplineInter(R, domain,regularizer='moments',theta=theta)
+    Rc = Rimg(xc)
+    res = (Ty-Rc).squeeze(1)
+    return torch.sqrt(torch.prod(domain.h))*res
+
+def jac(wc,theta):
+    jac = func.jacfwd(res)(wc,theta).squeeze(1)
+    return jac
 
 def lossfn(wc, theta):
     wp = unflatten_params(wc,keys,shapes,sizes)
@@ -97,50 +112,13 @@ def singlescale(scaling, wc_np, track_loss=False):
                            options={'gtol': 1e-7}, callback=callback_single)
         return results.x, loss_single
         
-
-
-def multiscale(scaling,wc_np, track_loss=False):
-    if not track_loss:
-        for i in range(len(scaling)):
-            theta = scaling[i]
-            theta_np = tensor_to_numpy(theta)
-            results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-ncg',
-                    jac=scipy_grad, hess=scipy_hessian,
-                    options={'gtol': 1e-7})
-            wc_np=results.x
-
-        return results.x
-    else:
-        losses = []
-        grads = []
-        loss_multi = []
-        grads_multi = []
-        def callback_multi(xk):
-            loss_multi.append(last_loss)
-            grads_multi.append(last_grad)
-
-        for i in range(len(scaling)):
-            loss_multi = []
-            grads_multi = []
-            theta = scaling[i]
-            theta_np = tensor_to_numpy(theta)
-            results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-ncg',
-                    jac=scipy_grad, hess=scipy_hessian,
-                    options={'gtol': 1e-7}, callback=callback_multi)
-            wc_np=results.x
-            losses.append(loss_multi)
-            grads.append(grads_multi)
-
-        return results.x, losses, grads
-        
-
 def homotopyopt(scaling, wc_np, track_loss=False):
     if not track_loss:
         theta = scaling[0]
         theta_np = tensor_to_numpy(theta)
         results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-ncg',
                     jac=scipy_grad, hess=scipy_hessian,
-                    options={'gtol': 1e-7})
+                    options={'gtol': 1e-4})
         wc_np = results.x
         for i in range(1, len(scaling)):
             def velocity_fn(theta, wc):
@@ -156,7 +134,7 @@ def homotopyopt(scaling, wc_np, track_loss=False):
 
             results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-ncg',
                     jac=scipy_grad, hess=scipy_hessian,
-                    options={'gtol': 1e-7})        
+                    options={'gtol': 1e-4})        
             
         return results.x
     else:
@@ -172,7 +150,7 @@ def homotopyopt(scaling, wc_np, track_loss=False):
         theta_np = tensor_to_numpy(theta)
         results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-ncg',
                     jac=scipy_grad, hess=scipy_hessian,
-                    options={'gtol': 1e-7}, callback=callback_homo)
+                    options={'gtol': 1e-4}, callback=callback_homo)
         wc_np = results.x
         losses.append(loss_homo)
         grads.append(grads_homo)
@@ -192,7 +170,7 @@ def homotopyopt(scaling, wc_np, track_loss=False):
 
             results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-ncg',
                     jac=scipy_grad, hess=scipy_hessian,
-                    options={'gtol': 1e-7}, callback=callback_homo)      
+                    options={'gtol': 1e-4}, callback=callback_homo)      
             losses.append(loss_homo)  
             grads.append(grads_homo)
             
@@ -222,7 +200,7 @@ def homotopy_with_reference(scaling, wc_np):
     theta_np = tensor_to_numpy(theta)
     results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-ncg',
                 jac=scipy_grad, hess=scipy_hessian,
-                options={'gtol': 1e-7}, callback=callback_homo)
+                options={'gtol': 1e-4}, callback=callback_homo)
     wc_np = results.x
     losses.append(loss_homo)
     grads.append(grads_homo)
@@ -251,61 +229,116 @@ def homotopy_with_reference(scaling, wc_np):
 
         results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-ncg',
                 jac=scipy_grad, hess=scipy_hessian,
-                options={'gtol': 1e-7}, callback=callback_homo)      
+                options={'gtol': 1e-4}, callback=callback_homo)      
         losses.append(loss_homo)  
         grads.append(grads_homo)
         
     return results.x, losses, grads, loss_references, grad_references
 
+def homotopy_gn_with_ref(scaling, wc):
+    losses = []
+    grads = []
+    loss_references = []
+    grad_references = []
+    theta = scaling[0].reshape(1)
+
+    with torch.no_grad():
+        loss = torch.norm(res(wc, theta.item()))**2
+        grad = func.grad(lambda wc, theta: torch.norm(res(wc, theta))**2)(wc, theta)
+        loss_references.append(loss.item())
+        grad_references.append(torch.norm(grad).item())
+
+    results, hess, loss_lma, grad_lma = lsq_lma(p=wc,
+            function=res, 
+            jac_function=jac,
+            args=theta,
+            gtol=1e-4,
+            ptol=1e-50,
+            max_iter=1000,
+            return_loss_and_grad=True)
+    wc = results[-1]
+    losses.append(loss_lma)
+    grads.append(grad_lma)
+    for i in range(1, len(scaling)): 
+        with torch.no_grad():
+            loss = torch.norm(res(wc, theta.item()))**2
+            grad = func.grad(lambda wc, theta: torch.norm(res(wc, theta))**2)(wc, theta)
+            loss_references.append(loss.item())
+            grad_references.append(torch.norm(grad).item())
+
+        def velocity_fn(theta,wc):
+            grad_wc_theta = func.jacrev(func.grad(lambda wc, theta: torch.norm(res(wc, theta))**2), argnums=1)(wc, theta)
+            vel = torch.linalg.lstsq(hess, grad_wc_theta).solution
+            return -vel
+        wc = torchdiffeq.odeint(velocity_fn, wc, torch.tensor([theta.item(), scaling[i]]), method='euler')[-1]
+
+        theta = scaling[i].reshape(1) 
+        results, hess, loss_lma, grad_lma = lsq_lma(p=wc,
+                function=res, 
+                jac_function=jac,
+                args=theta,
+                gtol=1e-5,
+                ptol=1e-50,
+                max_iter=1000,
+                return_loss_and_grad=True)
+        wc = results[-1]
+        losses.append(loss_lma)
+        grads.append(grad_lma)
+
+    return wc, losses, grads, loss_references, grad_references
+
 if __name__ == '__main__':
 
-    scaling = torch.logspace(3, -3, 40)
+    scaling = torch.logspace(3, -3, 20)
 
-    Timg = SplineInter(T, domain,regularizer='moments',theta=1e-3)
+    Timg = SplineInter(T, domain,regularizer='moments',theta=scaling[-1])
     T0 = Timg(xc)
-    Rimg = SplineInter(R, domain,regularizer='moments',theta=1e-3)
+    Rimg = SplineInter(R, domain,regularizer='moments',theta=scaling[-1])
     R0 = Rimg(xc)
 
     wc = params_to_vec(trafo)
     wc_np = tensor_to_numpy(wc)
 
     # Is the prediction step helping? 
-    # compare the difference between with and without the prediction 
-    # for each step.
+    # Does using gauss newton hessian approx work as well as using an exact hessian?
     wc_homo, losses_homo, grads_homo, loss_ref_homo, grad_ref_homo = homotopy_with_reference(scaling, wc_np)
-    loss_diff = []
-    grad_diff = []
-    for i in range(len(scaling)-1):
-        loss_diff.append(loss_ref_homo[i] - losses_homo[i][0])
-        grad_diff.append(grad_ref_homo[i] - grads_homo[i][0])
+    wc_gn, losses_gn, grads_gn, loss_ref_gn, grad_ref_gn = homotopy_gn_with_ref(scaling, wc)
+    print(f"difference between two solutions: {torch.norm(numpy_to_tensor(wc_homo) - wc_gn)}")
+    loss_diff_n = []
+    grad_diff_n = []
+    loss_diff_gn = []
+    grad_diff_gn = []
+    for i in range(len(scaling)): #relative loss difference and relative grad difference
+        loss_diff_n.append((loss_ref_homo[i] - losses_homo[i][0])/loss_ref_homo[i])
+        grad_diff_n.append((grad_ref_homo[i] - grads_homo[i][0])/grad_ref_homo[i])
+
+        loss_diff_gn.append((loss_ref_gn[i] - losses_gn[i][0])/loss_ref_gn[i])
+        grad_diff_gn.append((grad_ref_gn[i] - grads_gn[i][0])/grad_ref_gn[i])
     plt.figure(figsize=(5,6))
     plt.subplot(2,1,1)
-    plt.scatter(range(len(loss_diff)), loss_diff)
+    plt.scatter(scaling, loss_diff_n)
+    plt.scatter(scaling, loss_diff_gn)
     plt.axhline(y=0, color='gray', linestyle='--') 
     plt.ylabel('Loss Difference', fontsize=14)
-    plt.xlabel(r'$\theta$ Step', fontsize=14)
+    plt.xlabel(r'$\theta$', fontsize=14)
+    plt.xscale('log')
     plt.title('Loss Difference', fontsize=16)
-    ax1 = plt.gca()
-    ax1.yaxis.set_major_formatter(ScalarFormatter(useMathText=True))
-    ax1.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
 
     plt.subplot(2,1,2)
-    plt.scatter(range(len(grad_diff)), grad_diff)
+    plt.scatter(scaling, grad_diff_n)
+    plt.scatter(scaling, grad_diff_gn)
     plt.axhline(y=0, color='gray', linestyle='--') 
     plt.ylabel('Gradient Norm Difference', fontsize=14)
-    plt.xlabel(r'$\theta$ Step', fontsize=14)
+    plt.xlabel(r'$\theta$', fontsize=14)
+    plt.xscale('log')
     plt.title('Gradient Difference', fontsize=16)
-    plt.subplots_adjust(hspace=0.4)  
-    ax2 = plt.gca()
-    ax2.yaxis.set_major_formatter(ScalarFormatter(useMathText=True))
-    ax2.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    plt.subplots_adjust(hspace=0.5)  
 
     plt.savefig('./results/fig/LossandGradientDiffPlot.png')
     plt.show()
     
     # run all optimization strategies
     wc_single, losses_single = singlescale(scaling, wc_np, track_loss=True)
-    wc_mulit, losses_multi, grads_multi = multiscale(scaling, wc_np, track_loss=True)
     wc_homo, losses_homo, grads_homo = homotopyopt(scaling, wc_np, track_loss=True)
 
     # Creation of single scale failing plot
@@ -355,38 +388,5 @@ if __name__ == '__main__':
     plt.tight_layout()
     plt.savefig('./results/fig/singlescaleFailure.png')
     plt.show()
-
-    # multiscale and homotopy times
-    trials = 100
-    multiscale_times = []
-    for i in range(trials):
-        start = time.time()
-        wc_multi_2 = multiscale(scaling, wc_np, track_loss=False)
-        end = time.time()
-
-        total = end-start
-        multiscale_times.append(total)
-
-
-    homotopy_times = []
-    for i in range(trials):
-        start = time.time()
-        wc_multi_2 = homotopyopt(scaling, wc_np, track_loss=False)
-        end = time.time()
-
-        total = end-start
-        homotopy_times.append(total)
-
-    from statistics import mean, stdev
-    print(f"multiscale time: {mean(multiscale_times)} with std: {stdev(multiscale_times)}")
-    print(f"homotopy time: {mean(homotopy_times)} with std: {stdev(homotopy_times)}")
-
-    data = {}
-
-    data['Homotopy Exec Time'] = homotopy_times
-    data['Multiscale Exec Time'] = multiscale_times
-    df = pd.DataFrame(data)
-    csv_filename = './results/data/HomoVSMultiscale.csv'
-    df.to_csv(csv_filename)
 
     
