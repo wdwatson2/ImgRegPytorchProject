@@ -2,7 +2,6 @@
 import torch
 from PIL import Image
 import matplotlib.pyplot as plt
-from matplotlib.ticker import ScalarFormatter
 from src.domain import Domain
 from src.utils import *
 import torch.func as func
@@ -227,10 +226,6 @@ if __name__ == '__main__':
     grad_diff_n = []
     loss_diff_gn = []
     grad_diff_gn = []
-    print(len(loss_ref_homo))
-    print(len(losses_homo))
-    print(loss_ref_homo[0])
-    print(losses_homo[0])
     for i in range(len(scaling)): #relative loss difference and relative grad difference
         loss_diff_n.append((loss_ref_homo[i] - losses_homo[i][0])/loss_ref_homo[i])
         grad_diff_n.append((grad_ref_homo[i] - grads_homo[i][0])/grad_ref_homo[i])
@@ -244,24 +239,25 @@ if __name__ == '__main__':
     print(grad_diff_gn)
     plt.figure(figsize=(12,4))
     plt.subplot(1,2,1)
-    plt.scatter(scaling, loss_diff_n)
-    plt.scatter(scaling, loss_diff_gn)
+    plt.scatter(scaling, loss_diff_n, marker = '.', label="Newton", s=100)
+    plt.scatter(scaling, loss_diff_gn, marker='*', label="Gauss Newton", s=75)
     plt.axhline(y=0, color='gray', linestyle='--') 
-    plt.ylabel('Loss Difference', fontsize=14)
+    plt.ylabel('Relative Difference', fontsize=14)
     plt.xlabel(r'$\theta$', fontsize=14)
     plt.xscale('log')
-    plt.title('Loss Difference', fontsize=16)
+    plt.title('Relative Loss Difference', fontsize=16)
 
     plt.subplot(1,2,2)
-    plt.scatter(scaling, grad_diff_n)
-    plt.scatter(scaling, grad_diff_gn)
+    plt.scatter(scaling, grad_diff_n, marker = '.', label="Newton", s=100)
+    plt.scatter(scaling, grad_diff_gn, marker = '*', label="Gauss Newton", s=75)
     plt.axhline(y=0, color='gray', linestyle='--') 
-    plt.ylabel('Gradient Norm Difference', fontsize=14)
+    plt.ylabel('Relative Difference', fontsize=14)
     plt.xlabel(r'$\theta$', fontsize=14)
     plt.xscale('log')
-    plt.title('Gradient Difference', fontsize=16)
+    plt.title('Relative Grad Norm Difference', fontsize=16)
     plt.subplots_adjust(hspace=0.5) 
     plt.tight_layout() 
+    plt.legend(fontsize='large')
 
     plt.savefig('./results/figs/LossandGradientDiffPlot.png')
     plt.show()
