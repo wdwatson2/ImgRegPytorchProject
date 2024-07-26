@@ -1,4 +1,3 @@
-
 import torch
 
 def conjugate_gradient(A, b, x0, tol=1e-9, grad=True, max_iters=None):
@@ -15,29 +14,30 @@ def conjugate_gradient(A, b, x0, tol=1e-9, grad=True, max_iters=None):
     best to use torch.float64 for all dtypes
     
     """
-    if max_iters == None:
-        max_iters = x0.numel()
-    x = x0.flatten() # x is R_hat
-    r = b - A(x) # residual
-    if torch.norm(r) < tol: return x
-    delta = r # conjuagate-gradient direction
+    with torch.no_grad():
+        if max_iters == None:
+            max_iters = x0.numel()
+        x = x0.flatten() # x is R_hat
+        r = b - A(x) # residual
+        if torch.norm(r) < tol: return x
+        delta = r # conjuagate-gradient direction
 
-    for i in range(max_iters):
-        A_delta = A(delta)
-        # D.adjoint_func = None
-        # D.output_shape = None
-        beta = (r @ r) / (delta @ A_delta)
-        x = x + beta * delta
-        r_new = r - beta * A_delta
-        if torch.norm(r_new) < tol:
-            # print('found minimizer in ' + str(i+1) + ' iterations')
-            return x
-        chi = (r_new @ r_new) / (r @ r)
-        delta = chi * delta + r_new
+        for i in range(max_iters):
+            A_delta = A(delta)
+            # D.adjoint_func = None
+            # D.output_shape = None
+            beta = (r @ r) / (delta @ A_delta)
+            x = x + beta * delta
+            r_new = r - beta * A_delta
+            if torch.norm(r_new) < tol:
+                # print('found minimizer in ' + str(i+1) + ' iterations')
+                return x
+            chi = (r_new @ r_new) / (r @ r)
+            delta = chi * delta + r_new
 
-        r = r_new
-    # print('reached max_iters iterations to find minimizer')
-    return x
+            r = r_new
+        # print('reached max_iters iterations to find minimizer')
+        return x
 
         # for i in range(b.shape[0]):
         #     A_delta = A(delta)
