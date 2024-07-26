@@ -46,6 +46,9 @@ def lsq_lma(
     :verbose: display loss and grad norm with each iteration
     :return_loss_and_grad: return loss and grad lists
     :return: list of results, and J.T J (Hessian Approx) + loss, grad if return_loss_and_grad True
+
+    Debugging:
+    - Check that p, function output, and jac_fun output have a "squeezed" shape
     """
 
     losses = []
