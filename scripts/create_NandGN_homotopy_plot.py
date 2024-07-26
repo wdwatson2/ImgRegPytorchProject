@@ -279,9 +279,10 @@ if __name__ == '__main__':
     ax3.set_xscale('log')
     ax3.set_title('Relative Grad Norm Difference', fontsize=16)
 
+    plt.tight_layout()
     plt.savefig('./results/figs/LossandGradientDiffPlot.png')
     # Show the plot
-    plt.tight_layout()
+    
     plt.show()
 
     plt.figure()
