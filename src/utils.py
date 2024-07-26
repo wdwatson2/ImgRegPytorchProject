@@ -3,6 +3,7 @@ import torch
 # write the parameters of trafo into a vector
 def params_to_vec(trafo):
     return torch.cat([p.view(-1) for p in trafo.parameters()])
+
 # unpack the parameters of trafo from a vector
 def vec_to_params(trafo, params):
     start = 0
@@ -10,6 +11,17 @@ def vec_to_params(trafo, params):
         end = start + p.numel()
         p.data = params[start:end].view_as(p)
         start = end
+
+# given a 1D vector of parameters and a dictionary with the keys and their shapes
+import numpy as np
+def vec_to_paramdic(vec, dic):
+    idx = 0
+    output = {}
+    for k, shape in dic.items():
+        nextidx = idx+np.prod(shape)
+        output[k] = vec[idx:nextidx].reshape(shape)
+        idx = nextidx
+    return output
 
 # count the number of parameters of trafo
 def count_params(trafo):
@@ -61,6 +73,24 @@ def extract_jac_data(batch_jac, nbatch, nclasses):
         torch.cuda.empty_cache()
         
     return theta
+
+def extract_jac_data_SR(jac_dict, T_pred_shape):
+    output = None
+    for i in range(T_pred_shape[0]):
+        theta = None
+        for keys, jacs in jac_dict.items():
+            if theta is None:
+                theta = jacs[i].reshape(T_pred_shape[1], T_pred_shape[2], -1)
+            else:
+                theta = torch.cat((theta, jacs.reshape(T_pred_shape[1], T_pred_shape[2], -1)), dim=2)
+            jac_dict[keys] = None
+            torch.cuda.empty_cache()
+        if output == None:
+            output = theta
+        else:
+            output = torch.cat(theta, dim=2)
+    return output
+    
 
 def numpy_to_tensor(numpy_array):
     return torch.tensor(numpy_array, dtype=torch.float64, requires_grad=True)
