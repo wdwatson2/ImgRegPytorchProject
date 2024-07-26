@@ -116,9 +116,9 @@ def homotopy_with_reference(scaling, wc_np):
     # normal minimization
     theta = scaling[0]
     theta_np = tensor_to_numpy(theta)
-    results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-exact',
+    results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-ncg',
                 jac=scipy_grad, hess=scipy_hessian,
-                options={'gtol': 1e-4}, callback=callback_homo)
+                options={'gtol': 1e-8}, callback=callback_homo)
     wc_np = results.x
     losses.append(loss_homo)
     grads.append(grads_homo)
@@ -146,9 +146,9 @@ def homotopy_with_reference(scaling, wc_np):
         theta = scaling[i]
         theta_np = tensor_to_numpy(theta)
 
-        results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-exact',
+        results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-ncg',
                 jac=scipy_grad, hess=scipy_hessian,
-                options={'gtol': 1e-4}, callback=callback_homo)      
+                options={'gtol': 1e-8}, callback=callback_homo)      
         losses.append(loss_homo)  
         grads.append(grads_homo)
         iteration = 0
@@ -160,13 +160,16 @@ def homotopy_gn_with_ref(scaling, wc):
     grads = []
     loss_references = []
     grad_references = []
+    grad_with_pred = [] #in order to avoid comparing J^T res  with AD computed gradient, just compare AD computed gradients
     theta = scaling[0].reshape(1)
 
     with torch.no_grad():
-        loss = torch.norm(res(wc, theta.item()))**2
-        grad = func.grad(lambda wc, theta: torch.norm(res(wc, theta))**2)(wc, theta)
+        loss = (torch.norm(res(wc, theta.item()))**2).detach()
+        grad = (func.grad(lambda wc, theta: torch.norm(res(wc, theta))**2)(wc, theta)).detach()
         loss_references.append(loss.item())
         grad_references.append(torch.norm(grad).item())
+
+    grad_with_pred.append(torch.norm(grad).item()) #it will be the same for first scale
 
     results, hess, loss_lma, grad_lma = lsq_lma(p=wc,
             function=res, 
@@ -181,8 +184,8 @@ def homotopy_gn_with_ref(scaling, wc):
     grads.append(grad_lma)
     for i in range(1, len(scaling)): 
         with torch.no_grad():
-            loss = torch.norm(res(wc, theta.item()))**2
-            grad = func.grad(lambda wc, theta: torch.norm(res(wc, theta))**2)(wc, theta)
+            loss = (torch.norm(res(wc, theta.item()))**2).detach()
+            grad = (func.grad(lambda wc, theta: torch.norm(res(wc, theta))**2)(wc, theta)).detach()
             loss_references.append(loss.item())
             grad_references.append(torch.norm(grad).item())
 
@@ -191,6 +194,10 @@ def homotopy_gn_with_ref(scaling, wc):
             vel = torch.linalg.lstsq(hess, grad_wc_theta).solution
             return -vel
         wc = torchdiffeq.odeint(velocity_fn, wc, torch.tensor([theta.item(), scaling[i]]), method='euler')[-1]
+
+        with torch.no_grad():
+            grad = (func.grad(lambda wc, theta: torch.norm(res(wc, theta))**2)(wc, theta)).detach()
+            grad_with_pred.append(torch.norm(grad).item())
 
         theta = scaling[i].reshape(1) 
         results, hess, loss_lma, grad_lma = lsq_lma(p=wc,
@@ -205,7 +212,7 @@ def homotopy_gn_with_ref(scaling, wc):
         losses.append(loss_lma)
         grads.append(grad_lma)
 
-    return wc, losses, grads, loss_references, grad_references
+    return wc, losses, grads, loss_references, grad_references, grad_with_pred
 
 if __name__ == '__main__':
 
@@ -219,7 +226,8 @@ if __name__ == '__main__':
     # Does using gauss newton hessian approx work as well as using an exact hessian?
     # The answer is NO, GN hessian works against us, exact hessian actually helps
     wc_homo, losses_homo, grads_homo, loss_ref_homo, grad_ref_homo = homotopy_with_reference(scaling, wc_np)
-    wc_gn, losses_gn, grads_gn, loss_ref_gn, grad_ref_gn = homotopy_gn_with_ref(scaling, wc)
+    wc_gn, losses_gn, grads_gn, loss_ref_gn, grad_ref_gn, grad_with_pred = homotopy_gn_with_ref(scaling, wc)
+
     # Both optimization schemes arrive at the same set of paramaters:
     print(f"difference between two solutions: {torch.norm(numpy_to_tensor(wc_homo) - wc_gn)}")
     loss_diff_n = []
@@ -231,36 +239,60 @@ if __name__ == '__main__':
         grad_diff_n.append((grad_ref_homo[i] - grads_homo[i][0])/grad_ref_homo[i])
 
         loss_diff_gn.append((loss_ref_gn[i] - losses_gn[i][0])/loss_ref_gn[i])
-        grad_diff_gn.append((grad_ref_gn[i] - grads_gn[i][0])/grad_ref_gn[i])
+        grad_diff_gn.append((grad_ref_gn[i] - grad_with_pred[i])/grad_ref_gn[i])
 
-    print(loss_diff_n)
-    print(loss_diff_gn)
-    print(grad_diff_n)
     print(grad_diff_gn)
-    plt.figure(figsize=(12,4))
-    plt.subplot(1,2,1)
-    plt.scatter(scaling, loss_diff_n, marker = '.', label="Newton", s=100)
-    plt.scatter(scaling, loss_diff_gn, marker='*', label="Gauss Newton", s=75)
-    plt.axhline(y=0, color='gray', linestyle='--') 
-    plt.ylabel('Relative Difference', fontsize=14)
-    plt.xlabel(r'$\theta$', fontsize=14)
-    plt.xscale('log')
-    plt.title('Relative Loss Difference', fontsize=16)
 
-    plt.subplot(1,2,2)
-    plt.scatter(scaling, grad_diff_n, marker = '.', label="Newton", s=100)
-    plt.scatter(scaling, grad_diff_gn, marker = '*', label="Gauss Newton", s=75)
-    plt.axhline(y=0, color='gray', linestyle='--') 
-    plt.ylabel('Relative Difference', fontsize=14)
-    plt.xlabel(r'$\theta$', fontsize=14)
-    plt.xscale('log')
-    plt.title('Relative Grad Norm Difference', fontsize=16)
-    plt.subplots_adjust(hspace=0.5) 
-    plt.tight_layout() 
-    plt.legend(fontsize='large')
+    grad_reached_n = []
+    grad_reached_gn = []
+    for i in range(len(scaling)):
+        print(f"iter {i} gtol GN: {grads_gn[i][-1]}")
+        grad_reached_n.append(grads_gn[i][-1])
+        print(f"iter {i} gtol N: {grads_homo[i][-1]}")
+        grad_reached_gn.append(grads_homo[i][-1])
+
+    # Set up the grid
+    plt.figure(figsize=(12,6))
+    ax1 = plt.subplot2grid((2, 2), (0, 0), rowspan=2) 
+    ax2 = plt.subplot2grid((2, 2), (0, 1))            
+    ax3 = plt.subplot2grid((2, 2), (1, 1))             
+
+    ax1.scatter(scaling, loss_diff_n, marker = '.', label="Newton", s=100)
+    ax1.scatter(scaling, loss_diff_gn, marker='*', label="Gauss Newton", s=75)
+    ax1.axhline(y=0, color='gray', linestyle='--')
+    ax1.set_ylabel('Relative Difference', fontsize=14)
+    ax1.set_xlabel(r'$\theta$', fontsize=14)
+    ax1.set_xscale('log')
+    ax1.set_title('Relative Loss Difference', fontsize=16)
+    ax1.legend(fontsize='large')
+
+    ax2.scatter(scaling, grad_diff_n, marker = '.', label="Newton", s=100)
+    ax2.axhline(y=0, color='gray', linestyle='--')
+    ax2.set_ylabel('Relative Difference', fontsize=14)
+    ax2.set_xlabel(r'$\theta$', fontsize=14)
+    ax2.set_xscale('log')
+    ax2.set_title('Relative Grad Norm Difference', fontsize=16)
+    ax3.scatter(scaling, grad_diff_gn, marker = '*', label="Gauss Newton", s=75, color='orange')
+    ax3.set_ylim([min(grad_diff_gn) - 10, max(grad_diff_gn) + 10])
+    ax3.axhline(y=0, color='gray', linestyle='--')
+    ax3.set_ylabel('Relative Difference', fontsize=14)
+    ax3.set_xlabel(r'$\theta$', fontsize=14)
+    ax3.set_xscale('log')
+    ax3.set_title('Relative Grad Norm Difference', fontsize=16)
 
     plt.savefig('./results/figs/LossandGradientDiffPlot.png')
+    # Show the plot
+    plt.tight_layout()
     plt.show()
+
+    plt.figure()
+    plt.scatter(scaling, grad_reached_n, marker = '.', label="Newton", s=100)
+    plt.scatter(scaling, grad_reached_gn, marker = '*', label="Gauss Newton", s=75)
+    plt.legend('large')
+    plt.xscale('log')
+    plt.title('Final Grad Norm')
+    plt.show()
+    
 
 
     
