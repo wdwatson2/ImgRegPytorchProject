@@ -273,7 +273,6 @@ if __name__ == '__main__':
     ax2.set_xscale('log')
     ax2.set_title('Relative Grad Norm Difference', fontsize=16)
     ax3.scatter(scaling, grad_diff_gn, marker = '*', label="Gauss Newton", s=75, color='orange')
-    ax3.set_ylim([min(grad_diff_gn) - 10, max(grad_diff_gn) + 10])
     ax3.axhline(y=0, color='gray', linestyle='--')
     ax3.set_ylabel('Relative Difference', fontsize=14)
     ax3.set_xlabel(r'$\theta$', fontsize=14)
