@@ -82,7 +82,7 @@ def singlescale(scaling, wc_np):
                         options={'gtol': 1e-7})
     return results.x
         
-def homotopyopt(scaling, wc_np, track_loss=False):
+def predictcorrect(scaling, wc_np, track_loss=False):
     theta = scaling[0]
     theta_np = tensor_to_numpy(theta)
     results = minimize(scipy_loss, x0=wc_np, args=theta_np, method='trust-exact',
@@ -122,7 +122,7 @@ if __name__ == '__main__':
     
     # run singlescale and homotopy opt
     wc_single  = singlescale(scaling, wc_np)
-    wc_homo = homotopyopt(scaling, wc_np)
+    wc_homo = predictcorrect(scaling, wc_np)
 
     # Creation of single scale failing plot
     trafo1 = Affine2d()
@@ -137,7 +137,7 @@ if __name__ == '__main__':
     plt.figure(figsize=(8,8))
     plt.subplot(3, 3, 1)
     view_image_2d(T0, domain)
-    plt.title(r'$\mathcal{T}(\mathbf{\omega}))$', fontsize=14)
+    plt.title(r'$\mathcal{T}(\mathbf{\omega})$', fontsize=14)
     plt.subplot(3, 3, 2)
     view_image_2d(R0, domain)
     plt.title(r'$\mathcal{R}(\mathbf{\omega})$', fontsize=14)
@@ -148,7 +148,7 @@ if __name__ == '__main__':
     plt.subplot(3, 3, 4)
     view_image_2d(T0, domain)
     plot_grid_2d(trafo1(domain.getNodalGrid()).detach(), domain, spacing=4)
-    plt.title(r'$\mathcal{T}(\mathbf{\omega}))$ and $\vec{y}(\mathbf{\omega}; \mathbf{w})$', fontsize=14)
+    plt.title(r'$\mathcal{T}(\mathbf{\omega})$ and $\vec{y}(\mathbf{\omega}; \mathbf{w})$', fontsize=14)
     plt.subplot(3, 3, 5)
     view_image_2d(Timg(trafo1(xc).detach()), domain)
     plt.title(r'$\mathcal{T}(\vec{y}(\mathbf{\omega}; \mathbf{w}))$', fontsize=14)

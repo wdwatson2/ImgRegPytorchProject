@@ -89,7 +89,7 @@ def scipy_hessian(wc, theta):
     hessian = .5 * (hessian + hessian.T)
     return tensor_to_numpy(hessian)
      
-def homotopy_with_reference(scaling, wc_np):
+def predictcorrect_with_reference(scaling, wc_np):
     losses = []
     grads = []
     loss_homo = []
@@ -155,7 +155,7 @@ def homotopy_with_reference(scaling, wc_np):
         
     return results.x, losses, grads, loss_references, grad_references
 
-def homotopy_gn_with_ref(scaling, wc):
+def predictcorrect_gn_with_ref(scaling, wc):
     losses = []
     grads = []
     loss_references = []
@@ -222,11 +222,11 @@ if __name__ == '__main__':
     wc_np = tensor_to_numpy(wc)
 
     # Is the prediction step helping? 
-    # Can GN be used with predicter-corrector homotopy method
+    # Can GN be used with predicter-corrector method
     # Does using gauss newton hessian approx work as well as using an exact hessian?
     # The answer is NO, GN hessian works against us, exact hessian actually helps
-    wc_homo, losses_homo, grads_homo, loss_ref_homo, grad_ref_homo = homotopy_with_reference(scaling, wc_np)
-    wc_gn, losses_gn, grads_gn, loss_ref_gn, grad_ref_gn, grad_with_pred = homotopy_gn_with_ref(scaling, wc)
+    wc_homo, losses_homo, grads_homo, loss_ref_homo, grad_ref_homo = predictcorrect_with_reference(scaling, wc_np)
+    wc_gn, losses_gn, grads_gn, loss_ref_gn, grad_ref_gn, grad_with_pred = predictcorrect_gn_with_ref(scaling, wc)
 
     # Both optimization schemes arrive at the same set of paramaters:
     print(f"difference between two solutions: {torch.norm(numpy_to_tensor(wc_homo) - wc_gn)}")
@@ -257,8 +257,8 @@ if __name__ == '__main__':
     ax2 = plt.subplot2grid((2, 2), (0, 1))            
     ax3 = plt.subplot2grid((2, 2), (1, 1))             
 
-    ax1.scatter(scaling, loss_diff_n, marker = '.', label="Newton", s=100)
-    ax1.scatter(scaling, loss_diff_gn, marker='*', label="Gauss Newton", s=75)
+    ax1.scatter(scaling, loss_diff_n, marker = '.', label="Exact Hessian", s=100)
+    ax1.scatter(scaling, loss_diff_gn, marker='*', label="Approximated Hessian", s=75)
     ax1.axhline(y=0, color='gray', linestyle='--')
     ax1.set_ylabel('Relative Difference', fontsize=14)
     ax1.set_xlabel(r'$\theta$', fontsize=14)
@@ -266,13 +266,13 @@ if __name__ == '__main__':
     ax1.set_title('Relative Loss Difference', fontsize=16)
     ax1.legend(fontsize='large')
 
-    ax2.scatter(scaling, grad_diff_n, marker = '.', label="Newton", s=100)
+    ax2.scatter(scaling, grad_diff_n, marker = '.', label="Exact Hessian", s=100)
     ax2.axhline(y=0, color='gray', linestyle='--')
     ax2.set_ylabel('Relative Difference', fontsize=14)
     ax2.set_xlabel(r'$\theta$', fontsize=14)
     ax2.set_xscale('log')
     ax2.set_title('Relative Grad Norm Difference', fontsize=16)
-    ax3.scatter(scaling, grad_diff_gn, marker = '*', label="Gauss Newton", s=75, color='orange')
+    ax3.scatter(scaling, grad_diff_gn, marker = '*', label="Approximated Hessian", s=75, color='orange')
     ax3.axhline(y=0, color='gray', linestyle='--')
     ax3.set_ylabel('Relative Difference', fontsize=14)
     ax3.set_xlabel(r'$\theta$', fontsize=14)
@@ -285,13 +285,13 @@ if __name__ == '__main__':
     
     plt.show()
 
-    plt.figure()
-    plt.scatter(scaling, grad_reached_n, marker = '.', label="Newton", s=100)
-    plt.scatter(scaling, grad_reached_gn, marker = '*', label="Gauss Newton", s=75)
-    plt.legend('large')
-    plt.xscale('log')
-    plt.title('Final Grad Norm')
-    plt.show()
+    # plt.figure()
+    # plt.scatter(scaling, grad_reached_n, marker = '.', label="Exact Hessian", s=100)
+    # plt.scatter(scaling, grad_reached_gn, marker = '*', label="Approximated Hessian", s=75)
+    # plt.legend('large')
+    # plt.xscale('log')
+    # plt.title('Final Grad Norm')
+    # plt.show()
     
 
 
