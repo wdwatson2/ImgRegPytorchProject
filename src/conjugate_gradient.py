@@ -1,11 +1,11 @@
 import torch
 
-def conjugate_gradient(A, b, x0, tol=1e-9, grad=True, max_iters=None):
+def conjugate_gradient(A, b, x0, tol=1e-9, grad=True, max_iters=None, grad_iters=0):
     """ https://indrag49.github.io/Numerical-Optimization/conjugate-gradient-methods-1.html 
     solve Ax = b for x
 
     Input:
-        A - a symmetric positive-definite n x n matrix that is actually a function, not a tensor
+        A - a symmetric positive-definite n x n LinearOperator or Tensor
         b - a 1D pytorch tensor of length n
         x0 - a 1D pytorch tensor of length n which is the initial guess
         tol - an optional parameter, will stop when norm of residual < tol
@@ -20,9 +20,9 @@ def conjugate_gradient(A, b, x0, tol=1e-9, grad=True, max_iters=None):
         x = x0.flatten() # x is R_hat
         r = b - A(x) # residual
         if torch.norm(r) < tol: return x
-        delta = r # conjuagate-gradient direction
+        delta = r # conjugate-gradient direction
 
-        for i in range(max_iters):
+        for _ in range(max_iters - 1):
             A_delta = A(delta)
             # D.adjoint_func = None
             # D.output_shape = None
@@ -31,25 +31,25 @@ def conjugate_gradient(A, b, x0, tol=1e-9, grad=True, max_iters=None):
             r_new = r - beta * A_delta
             if torch.norm(r_new) < tol:
                 # print('found minimizer in ' + str(i+1) + ' iterations')
-                return x
+                break
             chi = (r_new @ r_new) / (r @ r)
             delta = chi * delta + r_new
 
             r = r_new
-        # print('reached max_iters iterations to find minimizer')
-        return x
+    
+    for _ in range(grad_iters):
+        A_delta = A(delta)
+        # D.adjoint_func = None
+        # D.output_shape = None
+        beta = (r @ r) / (delta @ A_delta)
+        x = x + beta * delta
+        r_new = r - beta * A_delta
+        chi = (r_new @ r_new) / (r @ r)
+        delta = chi * delta + r_new
 
-        # for i in range(b.shape[0]):
-        #     A_delta = A(delta)
-        #     delta_A_delta = (delta @ A_delta)
-        #     beta = - (r @ delta) / delta_A_delta # step-size
-        #     x = x + beta * delta # new guess
-        #     r = A(x) - b # new residual, takes long because solving the ODE, I presume
-        #     chi = (r @ A_delta) / delta_A_delta
-        #     delta = chi * delta - r # update direction
-        #     if torch.norm(r) < tol:
-        #         print('stopped after ' + str(i+1) + ' iterations')
-        #         return x
+        r = r_new
+    # print('reached max_iters iterations to find minimizer')
+    return x
         
 
     

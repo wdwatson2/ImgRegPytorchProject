@@ -14,6 +14,10 @@ class LinearOperator(torch.nn.Module):
         self.dtype = dtype
         self.device = device
 
+    @classmethod
+    def Identity(cls, input_shape, dtype=torch.float32, device='cpu'):
+        return LinearOperator(input_shape, forward_fun= lambda x : x.clone(), dtype=dtype, device=device)
+
 
     def forward(self, x):
         """
@@ -210,3 +214,7 @@ if __name__ == "__main__":
     # print(Aop_adjoint_adjoint(x)- Aop(x))
     print(torch.norm(Aop_adjoint_adjoint(x)- Aop(x)))
 
+    # testing identity
+    print("Testing Identity")
+    Id = LinearOperator.Identity(x.shape)
+    print(torch.norm(Id(x) - x))
