@@ -14,14 +14,14 @@ def conjugate_gradient(A, b, x0, tol=1e-9, grad=True, max_iters=None, grad_iters
     best to use torch.float64 for all dtypes
     
     """
+    if max_iters == None:
+        max_iters = x0.numel()
+    x = x0.flatten() # x is R_hat
+    r = b - A(x) # residual
+    if torch.norm(r) < tol: return x
+    delta = r # conjugate-gradient direction
+    
     with torch.no_grad():
-        if max_iters == None:
-            max_iters = x0.numel()
-        x = x0.flatten() # x is R_hat
-        r = b - A(x) # residual
-        if torch.norm(r) < tol: return x
-        delta = r # conjugate-gradient direction
-
         for _ in range(max_iters - 1):
             A_delta = A(delta)
             # D.adjoint_func = None
