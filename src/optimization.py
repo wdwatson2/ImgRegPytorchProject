@@ -182,7 +182,7 @@ def lsq_lma_operator(
     p_list = [p]
     while len(p_list) < max_iter:
         D = LinearOperator.Identity(input_shape = H.input_shape, H = H.dtype, device = H.device)
-        D *= 1 #if meth == 'lev' else torch.max(torch.maximum(H.diagonal(), D.diagonal()))
+        D *= 1 #qif meth == 'lev' else torch.max(torch.maximum(H.diagonal(), D.diagonal()))
         h = -torch.linalg.lstsq(H+u*D, g, rcond=None, driver=None)[0]
         f_h = fun(p+h)
         rho_denom = torch.matmul(h, u*h-g)
