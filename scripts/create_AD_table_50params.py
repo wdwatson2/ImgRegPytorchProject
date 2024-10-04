@@ -71,8 +71,8 @@ lossfn(wc, theta)'''
                             stmt=TEST_CODE,
                             repeat=repeat,
                             number=number)
-    
-    return times_loss
+    times_loss_ms = [t * 1000 for t in times_loss]
+    return times_loss_ms
 
 def grad_timing():
     TEST_CODE = '''
@@ -83,7 +83,8 @@ func.grad(lossfn, argnums=0)(wc, theta)'''
                             stmt=TEST_CODE,
                             repeat=repeat,
                             number=number)
-    return times_grad
+    times_grad_ms = [t * 1000 for t in times_grad]
+    return times_grad_ms
     
 def hess_timing():
     '''
@@ -99,7 +100,8 @@ func.jacrev(func.grad(lossfn))(wc, theta)
                             stmt=TEST_CODE,
                             repeat=repeat,
                             number=number)
-    return times_hessian
+    times_hessian_ms = [t * 1000 for t in times_hessian]
+    return times_hessian_ms
 
 def jacfwd_timing():
     TEST_CODE = '''
@@ -110,7 +112,8 @@ torch.func.jacfwd(forward, argnums=0)(wc, theta)'''
                             stmt=TEST_CODE,
                             repeat=repeat,
                             number=number)
-    return times_jacfwd
+    times_jacfwd_ms = [t * 1000 for t in times_jacfwd]
+    return times_jacfwd_ms
 
 def jacrev_timing():
     TEST_CODE = '''
@@ -121,7 +124,8 @@ torch.func.jacrev(forward, argnums=0)(wc, theta)'''
                             stmt=TEST_CODE,
                             repeat=repeat,
                             number=number)
-    return times_jacrev
+    times_jacrev_ms = [t * 1000 for t in times_jacrev]
+    return times_jacrev_ms
 
 def forward_timing():
     TEST_CODE = '''
@@ -132,7 +136,8 @@ forward(wc, theta)'''
                             stmt=TEST_CODE,
                             repeat=repeat,
                             number=number)
-    return times_forward  
+    times_forward_ms = [t * 1000 for t in times_forward]
+    return times_forward_ms  
 
 def compute_stats(times):
     mean = statistics.mean(times)
