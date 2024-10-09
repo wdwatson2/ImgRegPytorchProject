@@ -61,10 +61,10 @@ def show_reference_and_templates(R, T):
 
 
 
-m = 8
-factor = 2
+m = 128
+factor = 4
 theta = 0
-n_images = 1
+n_images = 32
 
 print(80*'-')
 print('LOADING IMAGES')
