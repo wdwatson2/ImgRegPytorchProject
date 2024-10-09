@@ -1,12 +1,10 @@
 #####################################################################################################
-# Creates super resolution diff all/no diff figures; run from the repository directory, not scripts #
+# Creates inexact CG VARPRO figures; run from the repository directory, not scripts                 #
 #####################################################################################################
 # WARNING: Due to issues with PyTorch's forward mode automatic differentiation,                     #
 #          this is a very memory intensive script for even modest numbers and                       #
 #          sizes of images. This should be rewritten in jax for future applications.                #                                                              
 #####################################################################################################
-
-
 
 
 import torch
@@ -63,10 +61,10 @@ def show_reference_and_templates(R, T):
 
 
 
-m = 10
+m = 8
 factor = 2
 theta = 0
-n_images = 4
+n_images = 1
 
 print(80*'-')
 print('LOADING IMAGES')
@@ -79,6 +77,8 @@ print('Will attempt to reconstruct an {} x {} image from {} {}x{} images'.format
 ))
 print(80*'-')
 
+
+
 domain_R = Domain(torch.tensor((0, 20, 0, 25)), torch.tensor((m, m)))
 domain_R.m.detach()
 domain_T = Domain(torch.tensor((0, 20, 0, 25)), torch.tensor((m//factor, m//factor)))
@@ -89,10 +89,6 @@ R = Image.open('data/hands-R.jpg')
 R = R.resize((m, m))
 R = torch.fliplr(torch.tensor(R.getdata(), dtype=torch.float64).view(m,m).transpose(0,1))
 Rimg = SplineInter(R, domain_R ,regularizer='moments',theta=theta).to(torch.float64)
-
-print(80*'-')
-print('COMPLETED LOADING IMAGES')
-print(80*'-')
 
 def randomAffines(reference, n):
     affines = [getRandomAffine(rotation_range=(0,45),seed=_+2) for _ in range(n-1)]
@@ -107,6 +103,28 @@ def randomAffines(reference, n):
 T = randomAffines(Rimg, len(times))
 
 #show_reference_and_templates(R, T)
+
+fig, ax = plt.subplots(1, n_images + 1, figsize = (6,2.5))
+
+[a.axis('off') for a in ax]
+
+plt.sca(ax[0])
+view_image_2d(R, domain_R)
+plt.title("True Reference")
+
+for i in range(n_images):
+    plt.sca(ax[i+1])
+    view_image_2d(T[i].detach(), domain_T)
+    plt.title("Template {}".format(i+1))
+
+plt.suptitle("Test Super Resolution Problem", fontsize=18, y=1.07)
+
+#plt.show()
+
+
+print(80*'-')
+print('COMPLETED LOADING IMAGES')
+print(80*'-')
 
 
 
@@ -135,6 +153,8 @@ b = torch.hstack([d * torch.sqrt(torch.prod(domain_T.h)), torch.zeros_like(L @ f
 
 
 
+
+
 xc_2d = domain_R.getCellCenteredGrid()
 xc = xc_2d.reshape(torch.prod(domain_R.m).item(),2).detach()
 
@@ -151,6 +171,7 @@ keys_list = [wp.keys() for wp in wps]
 
 flat_params_list, shapes_list, sizes_list = flatten_params_list(wps)
 wp_vec0 = torch.stack(flat_params_list).flatten().unsqueeze(1)
+
 
 
 
@@ -218,7 +239,7 @@ def res_fn(wp_vec, cg_iter):
     A = LinearOperator((torch.prod(domain_R.m).item(),), forward_fun = A_forward, dtype = torch.float64)
 
     f0 = conjugate_gradient(A.T ^ A, A.T @ b, f0_interp, max_iter=cg_iter)
-    reference = f0.reshape(*domain_R.m)    
+    reference = f0.reshape(*domain_R.m)        
     reference_img = SplineInter(reference, domain_R).to(torch.float64)
     template_predictions = torch.hstack([Forward_single(wp_vec.reshape(-1,6)[j], ys[j], reference_img)[0] for j in range(n_images)])
 
@@ -251,8 +272,6 @@ def Jac_fn_nodiff(wp_vec, cg_iter):
     return func.jacfwd(res_fn_nodiff)(wp_vec, cg_iter).detach().squeeze()
 
 
-
-
 gtol = 1e-2
 max_iter = 50
 
@@ -261,6 +280,9 @@ print('INITIATING PREREGISTRATION WITH NEWTON\'S METHOD')
 print('gtol = {:.2e}'.format(gtol))
 print('max_iter = {}'.format(max_iter))
 print(80*'-')
+
+
+
 
 # preregistration
 
@@ -276,7 +298,7 @@ def single_img_trafo(wp,y):
 
 def lossfn(wp_vec):
     pred_d = torch.hstack([single_img_trafo(wp_vec.reshape(-1,6)[j], ys[j]) for j in range(n_images)])
-    return torch.norm(pred_d - d)
+    return torch.norm(pred_d - d)**2
 
 
 def scipy_loss(wc):
@@ -342,107 +364,59 @@ print(80*'-')
 print('PREREGISTRATION WITH NEWTON\'S METHOD COMPLETE')
 print(80*'-')
 
+print(80*'-')
+print('INITIATING INEXACT VARPRO TEST')
+print(80*'-')
 
-
-
-maxcg_iters = 500 # verified that all iterations stop before reaching max_iters
+CG_iters = [1, 5, 10, 25, 50, 100]
 max_iter = 10
-
-print(80*'-')
-print('INITIATING VARPRO \'diff all/no diff\' TEST')
-print('maxcg_iters = {}'.format(maxcg_iters))
-print('max_iter = {}'.format(max_iter))
-print(80*'-')
 
 f0_grads = []
 loss_grads = []
 grad_grads = []
 
-print(80*'~')
-print('INITIATING VARPRO \'diff all\' TEST')
-print(80*'~')
-#with grad
-wp_list,_,losses,grads = lsq_lma(numpy_to_tensor(results.x).flatten(), 
-                                    res_fn, 
-                                    Jac_fn, 
-                                    args=[maxcg_iters], 
-                                    gtol=1e-5, 
-                                    max_iter=max_iter, 
-                                    verbose=True, 
-                                    return_loss_and_grad=True)
-wp_vec = wp_list[-1]
+for n_iter in CG_iters:
+    print(80*'~')
+    print('INITIATING INEXACT VARPRO WITH {} CG ITERS'.format(n_iter))
+    print(80*'~')
+    wp_list, _, losses, grads  = lsq_lma(numpy_to_tensor(results.x).squeeze(), res_fn, Jac_fn, args=[n_iter], gtol=0, max_iter=max_iter, verbose=False, return_loss_and_grad=True)
+    wp_vec = wp_list[-1]
+    def A_forward(f):
+        reference = f.reshape(*domain_R.m)        
+        reference_img = SplineInter(reference, domain_R)
+        template_predictions = torch.hstack([Forward_single(wp_vec.reshape(-1,6)[j], ys[j], reference_img)[0] for j in range(n_images)])
+        regularizer = lam * L(f)
+        return torch.hstack([template_predictions * torch.sqrt(torch.prod(domain_T.h)),
+                                regularizer * torch.sqrt(torch.prod(domain_R.h))])
+    A = LinearOperator((torch.prod(domain_R.m).item(),), forward_fun = A_forward, dtype = torch.float64)
+    f0 = conjugate_gradient_nograd(A.T ^ A, A.T @ b, f0_interp, max_iter= 5000, tol=1e-12)
+    f0_grad_reshaped = f0.reshape(*domain_R.m)
 
-print(80*'~')
-print('COMPLETED VARPRO \'diff all\' TEST')
-print(80*'~')
+    f0_grads.append(f0_grad_reshaped.clone().detach())
+    loss_grads.append(losses)
+    grad_grads.append(grads)
 
-def A_forward(f):
-    reference = f.reshape(*domain_R.m)        
-    reference_img = SplineInter(reference, domain_R)
-    template_predictions = torch.hstack([Forward_single(wp_vec.reshape(-1,6)[j], ys[j], reference_img)[0] for j in range(n_images)])
-    regularizer = lam * L(f)
-    return torch.hstack([template_predictions * torch.sqrt(torch.prod(domain_T.h)),
-                            regularizer * torch.sqrt(torch.prod(domain_R.h))])
-A = LinearOperator((torch.prod(domain_R.m).item(),), forward_fun = A_forward, dtype = torch.float64)
-f0 = conjugate_gradient_nograd(A.T ^ A, A.T @ b, f0_interp, max_iter= 5000, tol=1e-12)
-f0_grad_reshaped = f0.reshape(*domain_R.m)
 
-f0_grads.append(f0_grad_reshaped.clone().detach())
-loss_grads.append(losses)
-grad_grads.append(grads)
-
-print(80*'~')
-print('INITIATING VARPRO \'no diff\' TEST')
-print(80*'~')
-
-#without grad
-wp_list,_,losses,grads = lsq_lma(numpy_to_tensor(results.x).flatten(), 
-                                    res_fn_nodiff, 
-                                    Jac_fn_nodiff, 
-                                    args=[maxcg_iters], 
-                                    gtol=1e-5, 
-                                    max_iter=max_iter, 
-                                    verbose=True, 
-                                    return_loss_and_grad=True)
-wp_vec = wp_list[-1]
-def A_forward(f):
-    reference = f.reshape(*domain_R.m)        
-    reference_img = SplineInter(reference, domain_R)
-    template_predictions = torch.hstack([Forward_single(wp_vec.reshape(-1,6)[j], ys[j], reference_img)[0] for j in range(n_images)])
-    regularizer = lam * L(f)
-    return torch.hstack([template_predictions * torch.sqrt(torch.prod(domain_T.h)),
-                            regularizer * torch.sqrt(torch.prod(domain_R.h))])
-A = LinearOperator((torch.prod(domain_R.m).item(),), forward_fun = A_forward, dtype = torch.float64)
-f0 = conjugate_gradient_nograd(A.T ^ A, A.T @ b, f0_interp, max_iter= 5000, tol=1e-12)
-f0_grad_reshaped = f0.reshape(*domain_R.m)
-
-f0_grads.append(f0_grad_reshaped.clone().detach())
-loss_grads.append(losses)
-grad_grads.append(grads)
-
-print(80*'~')
-print('COMPLETED VARPRO \'no diff\' TEST')
-print(80*'~')
+    print(80*'~')
+    print('COMPLETED INEXACT VARPRO WITH {} CG ITERS'.format(n_iter))
+    print(80*'~')
 
 print(80*'-')
-print('COMPLETED VARPRO \'diff all/no diff\' TEST')
+print('COMPLETED INEXACT VARPRO TEST')
 print(80*'-')
 
-print(80*'~')
-print('PLOTTING VARPRO \'diff all/no diff\' TEST')
-print(80*'~')
+print(80*'-')
+print('PLOTTING INEXACT VARPRO TEST')
+print(80*'-')
 
-
-fig, ax = plt.subplots(1, 2, figsize = (10, 3))
-
-states = ["Diff All", "No Diff"]
+fig, ax = plt.subplots(1, 3, figsize = (15, 3))
 
 plt.sca(ax[0])
 for i in range(max_iter):
     plt.loglog(np.arange(max_iter) + 1, 1/(np.arange(max_iter) + 1)**(i), color='gray', alpha=.3, linestyle=':')
-for i in range(len(states)):
-    plt.loglog(np.arange(max_iter) + 1, np.array(loss_grads[i])/loss_grads[i][0], label="{}".format(states[i]), linewidth=0.5, marker = '.')
-plt.legend()
+for i in range(len(CG_iters)):
+    plt.loglog(np.arange(max_iter) + 1, np.array(loss_grads[i])/loss_grads[i][0], label="{} CG iters".format(CG_iters[i]), linewidth=0.5, marker = '.')
+plt.legend(loc = 'upper right')
 plt.ylim(10e-4,1.5)
 plt.title('Relative Loss')
 plt.xlabel('Optimization Iterations')
@@ -450,32 +424,31 @@ plt.xlabel('Optimization Iterations')
 plt.sca(ax[1])
 for i in range(max_iter):
     plt.loglog(np.arange(max_iter) + 1, 1/(np.arange(max_iter) + 1)**(i), color='gray', alpha=.3, linestyle=':')
-for i in range(len(states)):
-    plt.loglog(np.arange(max_iter) + 1, np.array(grad_grads[i])/grad_grads[i][0], label="{}".format(states[i]), linewidth=0.5, marker = '.')
+for i in range(len(CG_iters)):
+    plt.loglog(np.arange(max_iter) + 1, np.array(grad_grads[i])/grad_grads[i][0], label="{} CG iters".format(CG_iters[i]), linewidth=0.5, marker = '.')
 plt.legend()
-plt.ylim(10e-4,1.5)
+plt.ylim(10e-5,1.5)
 plt.title('Relative Gradient Norm')
 plt.xlabel('Optimization Iterations')
 
-# plt.sca(ax[2])
-# plt.bar(["Diff All", "No Diff"], np.array([torch.norm(f - R) for f in f0_grads])/torch.norm(R), color = ["C0", "C1"])
-# plt.title('Final Relative Error')
+plt.sca(ax[2])
+plt.plot(CG_iters, np.array([torch.norm(f - R) for f in f0_grads])/torch.norm(R), linewidth=0.5, marker = '.', markersize=10, color='maroon')
+plt.title('Final Relative Error')
+plt.xlabel('CG Iterations')
 
-plt.suptitle('Performance of Differentiating Variable Projection', y = 1.1, size=20)
-plt.savefig('results/figs/diff_CG_og_performance.pdf', bbox_inches='tight')
+plt.suptitle('Performance of Inexact Variable Projection', y = 1.1, size=20)
 
+plt.savefig('results/figs/CG_iter_test.pdf', bbox_inches='tight')
 
+fig, ax = plt.subplots(2, len(CG_iters), figsize=(12,4))
 
-
-fig, ax = plt.subplots(2, len(states), figsize=(6,4))
-
-for i in range(len(states)):
+for i in range(len(CG_iters)):
     #ax[0,i].axis('off')
     #ax[1,i].axis('off')
 
     plt.sca(ax[0,i])
     im_0 = view_image_2d(f0_grads[i],domain_R, kwargs={'clim':(0,250), 'cmap':'Greys_r'})
-    plt.title("{}".format(states[i]))
+    plt.title("{} CG Iters".format(CG_iters[i]))
 
     plt.sca(ax[1,i])
     im_1 = view_image_2d(f0_grads[i] - R,domain_R, kwargs={'clim':(-50,50), 'cmap':'Greys_r'})
@@ -493,12 +466,10 @@ cbar_ax2 = fig.add_axes([0.85, 0.0, 0.02, 0.45])
 cbar1 = plt.colorbar(im_0, cax=cbar_ax1)
 cbar2 = plt.colorbar(im_1, cax=cbar_ax2)
 
-plt.suptitle('Reconstructions', y = 1.15, x=.45, size=20)
+plt.suptitle('Inexact Variable Projection Results after 20 Iterations', y = 1.15, x=.45, size=20)
 
-plt.savefig('results/figs/og_diffreconstructions.pdf', bbox_inches='tight')
-
-
+plt.savefig('results/figs/CG_iter_refs.pdf', bbox_inches='tight')
 
 print(80*'-')
-print('COMPLETED PLOTTING VARPRO \'diff all/no diff\' TEST')
+print('COMPLETED PLOTTING INEXACT VARPRO TEST')
 print(80*'-')
